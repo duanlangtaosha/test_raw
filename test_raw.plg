@@ -1,0 +1,27 @@
+<html>
+<body>
+<pre>
+<h1>Build Log</h1>
+<h3>
+--------------------Configuration: test_raw - Win32 Debug--------------------
+</h3>
+<h3>Command Lines</h3>
+Creating temporary file "C:\Users\ADMINI~1\AppData\Local\Temp\RSPA241.tmp" with contents
+[
+/nologo /MTd /W3 /Gm /GX /ZI /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /D "_MBCS" /Fp"Debug/test_raw.pch" /Yu"stdafx.h" /Fo"Debug/" /Fd"Debug/" /FD /GZ /c 
+"E:\5_Python\test_raw\test_rawDlg.cpp"
+]
+Creating command line "cl.exe @C:\Users\ADMINI~1\AppData\Local\Temp\RSPA241.tmp" 
+Creating command line "link.exe /nologo /subsystem:windows /incremental:yes /pdb:"Debug/test_raw.pdb" /debug /machine:I386 /out:"Debug/test_raw.exe" /pdbtype:sept  .\Debug\StdAfx.obj .\Debug\test_raw.obj .\Debug\test_rawDlg.obj .\Debug\test_raw.res "
+<h3>Output Window</h3>
+Compiling...
+test_rawDlg.cpp
+Linking...
+
+
+
+<h3>Results</h3>
+test_raw.exe - 0 error(s), 0 warning(s)
+</pre>
+</body>
+</html>
