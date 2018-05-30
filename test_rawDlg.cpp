@@ -136,6 +136,11 @@ void CTest_rawDlg::OnSysCommand(UINT nID, LPARAM lParam)
 void qc_imag_bay2rgb_horip(unsigned char *bay, int bay_line,
 		unsigned char *rgb, int rgb_line,
 		int columns, int rows, int bpp);
+
+
+int
+dc1394_bayer_Bilinear(const unsigned char * bayer, unsigned char * rgb, int sx, int sy, int tile);
+
 unsigned char raw[];
 //unsigned char p_rgb888[480 * 272 * 3];
 unsigned char *p_rgb888 = NULL;
@@ -143,6 +148,16 @@ unsigned char *p_rgb888 = NULL;
 // If you add a minimize button to your dialog, you will need the code below
 //  to draw the icon.  For MFC applications using the document/view model,
 //  this is automatically done for you by the framework.
+
+
+typedef enum {
+    DC1394_COLOR_FILTER_RGGB = 512,
+    DC1394_COLOR_FILTER_GBRG,
+    DC1394_COLOR_FILTER_GRBG,
+    DC1394_COLOR_FILTER_BGGR
+} dc1394color_filter_t ;
+
+
 
 void CTest_rawDlg::OnPaint() 
 {
@@ -180,7 +195,9 @@ void CTest_rawDlg::OnPaint()
 		memset(buf, 0, 480 * 272 * 3);
 		memset(rgb, 0, 480 * 272 * 3);
 
-		qc_imag_bay2rgb_horip((unsigned char *)raw, 480, buf, 480 * 3, 480, 272, 3);
+		//qc_imag_bay2rgb_horip((unsigned char *)raw, 480, buf, 480 * 3, 480, 272, 3);
+
+		dc1394_bayer_Bilinear((unsigned char *)raw, buf, 480 , 272, DC1394_COLOR_FILTER_BGGR);
 
 		for (dst_y=0; dst_y<272; dst_y++) {
 			for (dst_x=0; dst_x<480; dst_x++) {
@@ -191,10 +208,11 @@ void CTest_rawDlg::OnPaint()
 
 
 
-
+				
   				rgb[dst_y*stribe+3*dst_x+0] = p[0];
-				rgb[dst_y*stribe+3*dst_x+1] = p[2];
-				rgb[dst_y*stribe+3*dst_x+2] = p[1];
+				rgb[dst_y*stribe+3*dst_x+1] = p[1];
+				rgb[dst_y*stribe+3*dst_x+2] = p[2];
+				
 	
 
 
@@ -26513,5 +26531,155 @@ void qc_imag_bay2rgb_horip(unsigned char *bay, int bay_line,
 	} while (--row_cnt);
 }
 
+
+
+/*
+typedef enum {
+    DC1394_COLOR_FILTER_RGGB = 512,
+    DC1394_COLOR_FILTER_GBRG,
+    DC1394_COLOR_FILTER_GRBG,
+    DC1394_COLOR_FILTER_BGGR
+} */
+
+
+#define DC1394_COLOR_FILTER_MIN        DC1394_COLOR_FILTER_RGGB
+#define DC1394_COLOR_FILTER_MAX        DC1394_COLOR_FILTER_BGGR
+#define DC1394_COLOR_FILTER_NUM       (DC1394_COLOR_FILTER_MAX - DC1394_COLOR_FILTER_MIN + 1)
+
+
+
+void
+ClearBorders(unsigned char *rgb, int sx, int sy, int w)
+{
+    int i, j;
+    // black edges are added with a width w:
+    i = 3 * sx * w - 1;
+    j = 3 * sx * sy - 1;
+    while (i >= 0) {
+        rgb[i--] = 0;
+        rgb[j--] = 0;
+    }
+
+    int low = sx * (w - 1) * 3 - 1 + w * 3;
+    i = low + sx * (sy - w * 2 + 1) * 3;
+    while (i > low) {
+        j = 6 * w;
+        while (j > 0) {
+            rgb[i--] = 0;
+            j--;
+        }
+        i -= (sx - 2 * w) * 3;
+    }
+}
+
+
+
+int
+dc1394_bayer_Bilinear(const unsigned char * bayer, unsigned char * rgb, int sx, int sy, int tile)
+{
+    const int bayerStep = sx;
+    const int rgbStep = 3 * sx;
+    int width = sx;
+    int height = sy;
+    /*
+       the two letters  of the OpenCV name are respectively
+       the 4th and 3rd letters from the blinky name,
+       and we also have to switch R and B (OpenCV is BGR)
+
+       CV_BayerBG2BGR <-> DC1394_COLOR_FILTER_BGGR
+       CV_BayerGB2BGR <-> DC1394_COLOR_FILTER_GBRG
+       CV_BayerGR2BGR <-> DC1394_COLOR_FILTER_GRBG
+
+       int blue = tile == CV_BayerBG2BGR || tile == CV_BayerGB2BGR ? -1 : 1;
+       int start_with_green = tile == CV_BayerGB2BGR || tile == CV_BayerGR2BGR;
+     */
+    int blue = tile == DC1394_COLOR_FILTER_BGGR
+        || tile == DC1394_COLOR_FILTER_GBRG ? -1 : 1;
+    int start_with_green = tile == DC1394_COLOR_FILTER_GBRG
+        || tile == DC1394_COLOR_FILTER_GRBG;
+
+    if ((tile>DC1394_COLOR_FILTER_MAX)||(tile<DC1394_COLOR_FILTER_MIN))
+        return -26;
+
+    //ClearBorders(rgb, sx, sy, 1);
+    rgb += rgbStep + 3 + 1;
+    height -= 2;
+    width -= 2;
+
+    for (; height--; bayer += bayerStep, rgb += rgbStep) {
+        int t0, t1;
+        const unsigned char *bayerEnd = bayer + width;
+
+        if (start_with_green) {
+            /* OpenCV has a bug in the next line, which was
+               t0 = (bayer[0] + bayer[bayerStep * 2] + 1) >> 1; */
+            t0 = (bayer[1] + bayer[bayerStep * 2 + 1] + 1) >> 1;
+            t1 = (bayer[bayerStep] + bayer[bayerStep + 2] + 1) >> 1;
+            rgb[-blue] = (unsigned char) t0;
+            rgb[0] = bayer[bayerStep + 1];
+            rgb[blue] = (unsigned char) t1;
+            bayer++;
+            rgb += 3;
+        }
+
+        if (blue > 0) {
+            for (; bayer <= bayerEnd - 2; bayer += 2, rgb += 6) {
+                t0 = (bayer[0] + bayer[2] + bayer[bayerStep * 2] +
+                      bayer[bayerStep * 2 + 2] + 2) >> 2;
+                t1 = (bayer[1] + bayer[bayerStep] +
+                      bayer[bayerStep + 2] + bayer[bayerStep * 2 + 1] +
+                      2) >> 2;
+                rgb[-1] = (unsigned char) t0;
+                rgb[0] = (unsigned char) t1;
+                rgb[1] = bayer[bayerStep + 1];
+
+                t0 = (bayer[2] + bayer[bayerStep * 2 + 2] + 1) >> 1;
+                t1 = (bayer[bayerStep + 1] + bayer[bayerStep + 3] +
+                      1) >> 1;
+                rgb[2] = (unsigned char) t0;
+                rgb[3] = bayer[bayerStep + 2];
+                rgb[4] = (unsigned char) t1;
+            }
+        } else {
+            for (; bayer <= bayerEnd - 2; bayer += 2, rgb += 6) {
+                t0 = (bayer[0] + bayer[2] + bayer[bayerStep * 2] +
+                      bayer[bayerStep * 2 + 2] + 2) >> 2;
+                t1 = (bayer[1] + bayer[bayerStep] +
+                      bayer[bayerStep + 2] + bayer[bayerStep * 2 + 1] +
+                      2) >> 2;
+                rgb[1] = (unsigned char) t0;
+                rgb[0] = (unsigned char) t1;
+                rgb[-1] = bayer[bayerStep + 1];
+
+                t0 = (bayer[2] + bayer[bayerStep * 2 + 2] + 1) >> 1;
+                t1 = (bayer[bayerStep + 1] + bayer[bayerStep + 3] +
+                      1) >> 1;
+                rgb[4] = (unsigned char) t0;
+                rgb[3] = bayer[bayerStep + 2];
+                rgb[2] = (unsigned char) t1;
+            }
+        }
+
+        if (bayer < bayerEnd) {
+            t0 = (bayer[0] + bayer[2] + bayer[bayerStep * 2] +
+                  bayer[bayerStep * 2 + 2] + 2) >> 2;
+            t1 = (bayer[1] + bayer[bayerStep] +
+                  bayer[bayerStep + 2] + bayer[bayerStep * 2 + 1] +
+                  2) >> 2;
+            rgb[-blue] = (unsigned char) t0;
+            rgb[0] = (unsigned char) t1;
+            rgb[blue] = bayer[bayerStep + 1];
+            bayer++;
+            rgb += 3;
+        }
+
+        bayer -= width;
+        rgb -= width * 3;
+
+        blue = -blue;
+        start_with_green = !start_with_green;
+    }
+    return 0;
+}
 
 
